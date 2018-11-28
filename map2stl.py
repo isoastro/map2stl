@@ -77,6 +77,7 @@ def big_array(tiles):
                 arr = np.array(im)
                 yield rgb_to_meters(arr)
             
+    ## TODO: Trim big array to actually be the bounding rectangle as defined in bounds_to_tiles
     arr = np.array(list(generate()))
     nh, nw, _ = tiles.shape # Number of tiles in height and width
     h, w = arr[0].shape # Size of an individual tile
