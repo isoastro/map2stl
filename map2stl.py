@@ -129,7 +129,7 @@ def get_full_map(corner0, corner1, trim=True):
         x_offset_hi = TILE_SIZE - int(x_offset_hi * TILE_SIZE)
         y_offset_hi = TILE_SIZE - int(y_offset_hi * TILE_SIZE)
 
-        return arr[y_offset_low:-y_offset_hi, x_offset_low:-y_offset_hi]
+        return arr[y_offset_low:-y_offset_hi, x_offset_low:-x_offset_hi]
 
     return arr
 
