@@ -29,11 +29,11 @@ class LatLon(namedtuple('LatLon', 'lat lon')):
 
         return Mercator(x, y)
 
-    def pixel(self):
-        return self.mercator().pixel()
+    def pixel(self, zoom):
+        return self.mercator().pixel(zoom)
 
-    def tile(self):
-        return self.pixel().tile()
+    def tile(self, zoom):
+        return self.pixel(zoom).tile()
 
 
 class Mercator(namedtuple('Mercator', 'x y')):
@@ -56,8 +56,8 @@ class Mercator(namedtuple('Mercator', 'x y')):
 
         return Pixel(x, y, zoom)
 
-    def tile(self):
-        return self.pixel().tile()
+    def tile(self, zoom):
+        return self.pixel(zoom).tile()
 
 
 class Pixel(namedtuple('Pixel', 'x y zoom')):
@@ -81,13 +81,13 @@ class Pixel(namedtuple('Pixel', 'x y zoom')):
         x = (self.x / TILE_SIZE) - 1
         y = (self.y / TILE_SIZE) - 1
 
-        return Tile(x, y, pixel.zoom)
+        return TileCoords(x, y, pixel.zoom)
 
     def lat_lon(self):
         return self.mercator().lat_lon()
 
 
-class Tile(namedtuple('Tile', 'x y zoom')):
+class TileCoords(namedtuple('Tile', 'x y zoom')):
     @property
     def resolution(self):
         """Calculate meters/pixel"""
@@ -225,20 +225,22 @@ if __name__ == '__main__':
     print(f'zoom == {tile.zoom}')
     print()
 
-    pixel2 = tile.pixel()
-    print('Converted back to pixel')
-    print(f'x == {pixel2.x}')
-    print(f'y == {pixel2.y}')
-    print(f'zoom == {pixel2.zoom}')
+    print('Combinations')
     print()
 
-    merc2 = pixel2.mercator()
-    print(f'Converted back to mercator')
-    print(f'x == {merc2.x}')
-    print(f'y == {merc2.y}')
-    print()
+    methods = ['lat_lon', 'mercator', 'pixel', 'tile']
+    for obj in (latlon, merc, pixel, tile):
+        for meth in methods:
+            fn = None
+            try:
+                fn = getattr(obj, meth)
+            except AttributeError:
+                continue
 
-    latlon2 = merc2.lat_lon()
-    print(f'Converted back to lat and lon')
-    print(f'lat == {latlon2.lat}')
-    print(f'lon == {latlon2.lon}')
+            try:
+                res = fn()
+                print(f'{obj}.{meth}() = {res}')
+            except TypeError:
+                res = fn(zoom)
+                print(f'{obj}.{meth}(zoom={zoom}) = {res}')
+
