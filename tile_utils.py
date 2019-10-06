@@ -28,7 +28,7 @@ class LatLon(namedtuple('LatLon', 'lat lon')):
         lat = np.radians(self.lat)
         y = WGS84_RADIUS * np.log(np.tan((np.pi / 4) + (lat / 2)))
 
-        return Mercator(x, y)
+        return Mercator(x, -y)
 
     def pixel(self, zoom):
         return self.mercator().pixel(zoom)
