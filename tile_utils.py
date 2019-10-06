@@ -23,7 +23,7 @@ class LatLon(namedtuple('LatLon', 'lat lon')):
         """Convert latitude and longitude (degrees) in WGS84 to meters in Spherical Mercator"""
         # https://en.wikipedia.org/wiki/Mercator_projection#Derivation_of_the_Mercator_projection
 
-        x = WGS84_RADIUS * (np.radians(self.lon))
+        x = WGS84_RADIUS * np.radians(self.lon)
 
         lat = np.radians(self.lat)
         y = WGS84_RADIUS * np.log(np.tan((np.pi / 4) + (lat / 2)))
@@ -82,7 +82,7 @@ class Pixel(namedtuple('Pixel', 'x y zoom')):
         x = (self.x / TILE_SIZE) - 1
         y = (self.y / TILE_SIZE) - 1
 
-        return TileCoords(x, y, pixel.zoom)
+        return TileCoords(x, y, self.zoom)
 
     def lat_lon(self):
         return self.mercator().lat_lon()
@@ -93,6 +93,9 @@ class TileCoords(namedtuple('Tile', 'x y zoom')):
     def resolution(self):
         """Calculate meters/pixel"""
         return _resolution(self.zoom)
+
+    def asint(self):
+        return self.__class__(*map(int, map(round, self)))
 
     def pixel(self):
         """Convert a tile x, y, and zoom to a pixel location. Zoom is carried through to make the pixel meaningful"""
@@ -108,27 +111,6 @@ class TileCoords(namedtuple('Tile', 'x y zoom')):
         return self.mercator().lat_lon()
 
 
-class Tile(TileCoords):
-    _data = None
-
-    # TODO: This is kind of dumb
-    @property
-    def data(self):
-        if self._data is None:
-            x = np.zeros((TILE_SIZE, TILE_SIZE))
-            y = np.zeros((TILE_SIZE, TILE_SIZE))
-            origin = self.pixel()
-            origin_m = origin.mercator()
-            for i in range(TILE_SIZE):
-                for j in range(TILE_SIZE):
-                    pixel = Pixel(origin.x + i, origin.y + j, origin.zoom)
-                    merc = pixel.mercator()
-                    x[i, j] = merc.x
-                    y[i, j] = merc.y
-            self._data = np.dstack((x - origin_m.x, y - origin_m.y))
-        return self._data
-
-
 def rgb_to_meters(arr):
     """Convert an RGB array (image) to a 2d array of elevation values"""
     r = arr[:, :, 0]
@@ -137,13 +119,22 @@ def rgb_to_meters(arr):
     return (r * 256 + g + b / 256) - 32768
 
 
-
 def get_grid_from_file(filename):
     arr = np.array(imageio.imread(filename))
-    x = np.arange(TILE_SIZE)
-    X, Y = np.meshgrid(x, x)
-    Z = rgb_to_meters(arr)
-    return np.dstack((X, Y, Z))
+    return rgb_to_meters(arr)
+
+
+def corners_to_tiles(corner1, corner2, zoom):
+    """Convert a bounding rectangle in latitude and longitude into a 2d tuple of tile coordinates"""
+    xy1 = corner1.tile(zoom).asint()
+    xy2 = corner2.tile(zoom).asint()
+
+    lo_x = min(xy1.x, xy2.x)
+    hi_x = max(xy1.x, xy2.x)
+    lo_y = min(xy1.y, xy2.y)
+    hi_y = max(xy1.y, xy2.y)
+
+    return tuple(tuple(TileCoords(x, y, zoom) for x in range(lo_x, hi_x + 1)) for y in range(lo_y, hi_y + 1))
 
 
 if __name__ == '__main__':
@@ -200,7 +191,8 @@ if __name__ == '__main__':
     print('Converting tile coordinates to meters')
 
     tile = TileCoords(1330, 2043, 11)
-    origin = tile.pixel()
 
-    t = Tile(*tile)
-    print(t.data)
+    nw = LatLon(46.931359, -121.898533)
+    se = LatLon(46.761857, -121.624521)
+    tiles = corners_to_tiles(nw, se, 11)
+    print(tiles)
