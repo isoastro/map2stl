@@ -10,21 +10,17 @@ ORIGIN_METERS = WGS84_CIRCUMFERENCE / 2
 
 
 class TileMap:
-    LAT = 0
-    LON = 1
-    MERCATOR_X = 2
-    MERCATOR_Y = 3
-    PIXEL_X = 4
-    PIXEL_Y = 5
-    ELEVATION = 6
-    DATA_DEPTH = 7
+    MERCATOR_X = 0
+    MERCATOR_Y = 1
+    ELEVATION = 2
+    DATA_DEPTH = 3
 
     def __init__(self, corner1, corner2, zoom):
         self.zoom = zoom
         self._tiles = self.corners_to_tiles(corner1, corner2, zoom)
         num_x_pixels = len(self._tiles) * TILE_SIZE
         num_y_pixels = len(self._tiles[0]) * TILE_SIZE
-        self._data = np.zeros((num_x_pixels, num_y_pixels, self.DATA_DEPTH))
+        self._data = np.zeros((self.DATA_DEPTH, num_x_pixels, num_y_pixels))
 
         # Get all the data
         self.download_tiles()
@@ -33,23 +29,54 @@ class TileMap:
         # TODO: Is this correct? Where is the actual origin? Top left of each tile? What pixel/meter does that correspond to?
         ox, oy, _ = self._tiles[0][0] # Origin
         ox, oy = self.tile_coords_to_pixel(ox, oy)
-        self._data[:, :, self.PIXEL_X], self._data[:, :, self.PIXEL_Y] = np.mgrid[ox:ox + num_x_pixels, oy:oy + num_y_pixels]
+        pixels = np.mgrid[ox:ox + num_x_pixels, oy:oy + num_y_pixels]
 
         # Back out to meters
-        self._data[:, :, self.MERCATOR_X], self._data[:, :, self.MERCATOR_Y] =\
-            self.pixel_to_mercator(self._data[:, :, self.PIXEL_X], self._data[:, :, self.PIXEL_Y], self.zoom)
+        self._data[self.MERCATOR_X:self.MERCATOR_Y+1, :, :] = self.pixel_to_mercator(*pixels, self.zoom)
 
-        # And out to lat/lon
-        self._data[:, :, self.LAT], self._data[:, :, self.LON] =\
-            self.mercator_to_latlon(self._data[:, :, self.MERCATOR_X], self._data[:, :, self.MERCATOR_Y])
+        # Trim data and make x, y start at 0
+        self.trim(corner1, corner2)
+        self.zeroize_xy()
+
+    def trim(self, corner1, corner2):
+        lat_bounds = min(corner1[0], corner2[0]), max(corner1[0], corner2[0])
+        lon_bounds = min(corner1[1], corner2[1]), max(corner1[1], corner2[1])
+        lat_within_bounds = np.logical_and(
+            self.latlon[0] >= lat_bounds[0],
+            self.latlon[0] <= lat_bounds[1],
+        )
+        lon_within_bounds = np.logical_and(
+            self.latlon[1] >= lon_bounds[0],
+            self.latlon[1] <= lon_bounds[1],
+        )
+
+        mask = np.ix_(np.arange(self.DATA_DEPTH), lat_within_bounds, lon_within_bounds)
+        self._data = self._data[mask]
+
+    def zeroize_xy(self):
+        self._data[self.MERCATOR_X, :, :] -= self.mercator[0].min()
+        self._data[self.MERCATOR_Y, :, :] -= self.mercator[1].min()
+
+    def scale(self, scale_factor):
+        self._data *= scale_factor
 
     @property
     def elevation(self):
-        return self._data[:, :, self.ELEVATION]
+        return self._data[self.ELEVATION, :, :]
+
+    @property
+    def mercator(self):
+        return self._data[self.MERCATOR_X:self.MERCATOR_Y+1, :, :]
+
+    @property
+    def xyz(self):
+        return self._data[self.MERCATOR_X:self.ELEVATION+1, :, :]
 
     @property
     def latlon(self):
-        return self._data[:, :, self.LAT:self.LON+1]
+        mx = self.mercator[0, :, 0]
+        my = self.mercator[1, 0, :]
+        return np.array(self.mercator_to_latlon(mx, my))
 
     # TODO: Make this take an arbitrary polygon and generate all tiles the polygon overlaps
     @classmethod
@@ -71,8 +98,6 @@ class TileMap:
         hi_y = max(tile_coords1[1], tile_coords2[1])
 
         return [[(x, y, zoom) for x in range(lo_x, hi_x + 1)] for y in range(lo_y, hi_y + 1)]
-
-        # return tuple((x, y, zoom) for x in range(lo_x, hi_x + 1) for y in range(lo_y, hi_y + 1))
 
     @staticmethod
     def resolution(zoom):
@@ -128,7 +153,7 @@ class TileMap:
                 height = self.rgb_to_meters(arr)
                 ii = np.s_[i * TILE_SIZE:i * TILE_SIZE + TILE_SIZE]
                 jj = np.s_[j * TILE_SIZE:j * TILE_SIZE + TILE_SIZE]
-                self._data[ii, jj, self.ELEVATION] = height
+                self._data[self.ELEVATION, ii, jj] = height
 
 
 if __name__ == '__main__':
@@ -136,40 +161,15 @@ if __name__ == '__main__':
     nw = (46.762427, -121.632913) # Rainier
     # se = (47.497631, -122.185169) # Seattle
     # nw = (47.739248, -122.448340) # Seattle
-    z = 10
+    z = 8
 
     t = TileMap(se, nw, z)
-    print('min lat, lon', t.latlon[:, :, 0].min(), t.latlon[:, :, 1].min())
-    print('max lat, lon', t.latlon[:, :, 0].max(), t.latlon[:, :, 1].max())
+    print('min lat, lon', t.latlon[0].min(), t.latlon[1].min())
+    print('max lat, lon', t.latlon[0].max(), t.latlon[1].max())
 
-    lat_bounds = min(se[0], nw[0]), max(se[0], nw[0])
-    lon_bounds = min(se[1], nw[1]), max(se[1], nw[1])
-    lat_within_bounds = np.logical_and(
-        t.latlon[:, :, 0] >= min(se[0], nw[0]),
-        t.latlon[:, :, 0] <= max(se[0], nw[0]),
-    )
-    lon_within_bounds = np.logical_and(
-        t.latlon[:, :, 1] >= min(se[1], nw[1]),
-        t.latlon[:, :, 1] <= max(se[1], nw[1]),
-    )
-    within_bounds = np.logical_and(lat_within_bounds, lon_within_bounds)
-
-    lat_idx = lat_within_bounds.all(axis=0)
-    lon_idx = lon_within_bounds.all(axis=1)
-
-    stuff = t.elevation[lat_idx, :]
-    stuff = stuff[:, lon_idx]
-
+    from mpl_toolkits.mplot3d import Axes3D
     import matplotlib.pyplot as plt
     fig = plt.figure()
-    ax = fig.add_subplot(131)
-    ax.pcolormesh(t.elevation)
-    ax.set_aspect('equal')
-    ax = fig.add_subplot(132)
-    ax.pcolormesh(within_bounds)
-    ax.set_aspect('equal')
-    ax = fig.add_subplot(133)
-    ax.pcolormesh(stuff)
-    ax.set_aspect('equal')
-
-    fig.show()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(*t.mercator, t.elevation)
+    plt.show()
