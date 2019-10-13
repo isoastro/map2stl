@@ -20,15 +20,16 @@ def write_triangle(fh ,xyz0, xyz1, xyz2):
 
 
 def xyz_to_stl(xyz, filename):
+    _, nrows, ncols = xyz.shape
+    # Two triangles per square
+    num_triangles = 2 * (nrows - 1) * (ncols - 1)
+    print(f'Writing {num_triangles} triangles to {filename}')
+
     with open(filename, 'wb') as f:
         # Dump 80 bytes of 0 as empty header
         f.write(struct.pack('80B', *[0 for _ in range(80)]))
 
-        # Number of triangles
-        _, nrows, ncols = xyz.shape
-        # Two triangles per square
-        num_triangles = 2 * (nrows - 1) * (ncols - 1)
-        print(f'Writing {num_triangles} to {filename}')
+        # Dump number of triangles
         f.write(struct.pack('<L', num_triangles))
 
         for i in range(nrows - 1):
@@ -56,7 +57,8 @@ if __name__ == '__main__':
 
     # Create map
     tmap = tile.TileMap(args.corner1, args.corner2, args.zoom)
-    tmap.scale(1 / tmap.resolution(args.zoom))
+    # TODO: Something is screwed up with trimming the tile data, looks like it always trims to the same bounds somehow
+    # TODO: The elevation data seems squished. Not sure if Mt Rainier is tall/prominent enough
 
     xyz_to_stl(tmap.xyz, args.output)
 
