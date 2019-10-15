@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial.transform import Rotation
 import imageio
 import api
 
@@ -10,9 +11,9 @@ ORIGIN_METERS = WGS84_CIRCUMFERENCE / 2
 
 
 class TileMap:
-    MERCATOR_X = 0
-    MERCATOR_Y = 1
-    ELEVATION = 2
+    METERS_X = 0
+    METERS_Y = 1
+    METERS_Z = 2
     DATA_DEPTH = 3
 
     def __init__(self, corner1, corner2, zoom):
@@ -26,57 +27,89 @@ class TileMap:
         self.download_tiles()
 
         # Recalculate pixel space
-        # TODO: Is this correct? Where is the actual origin? Top left of each tile? What pixel/meter does that correspond to?
         ox, oy, _ = self._tiles[0][0] # Origin
         ox, oy = self.tile_coords_to_pixel(ox, oy)
-        pixels = np.mgrid[ox:ox + num_x_pixels, oy:oy + num_y_pixels]
+        px = np.arange(ox, ox + num_x_pixels)
+        py = np.arange(oy, oy + num_y_pixels)
 
-        # Back out to meters
-        self._data[self.MERCATOR_X:self.MERCATOR_Y+1, :, :] = self.pixel_to_mercator(*pixels, self.zoom)
+        # Back out to meters (Mercator)
+        mx, my = self.pixel_to_mercator(px, py, self.zoom)
+
+        # Convert to lat/lon bounds
+        self._lat, self._lon = self.mercator_to_latlon(mx, my)
 
         # Trim data and make x, y start at 0
         self.trim(corner1, corner2)
+
+        # Un-mercatorize
+        self.reproject()
+
+        # Set x, y min to 0, 0
         self.zeroize_xy()
 
     def trim(self, corner1, corner2):
         lat_bounds = min(corner1[0], corner2[0]), max(corner1[0], corner2[0])
         lon_bounds = min(corner1[1], corner2[1]), max(corner1[1], corner2[1])
         lat_within_bounds = np.logical_and(
-            self.latlon[0] >= lat_bounds[0],
-            self.latlon[0] <= lat_bounds[1],
+            self._lat >= lat_bounds[0],
+            self._lat <= lat_bounds[1],
         )
         lon_within_bounds = np.logical_and(
-            self.latlon[1] >= lon_bounds[0],
-            self.latlon[1] <= lon_bounds[1],
+            self._lon >= lon_bounds[0],
+            self._lon <= lon_bounds[1],
         )
 
         mask = np.ix_(np.arange(self.DATA_DEPTH), lat_within_bounds, lon_within_bounds)
+        self._lat = self._lat[lat_within_bounds]
+        self._lon = self._lon[lon_within_bounds]
         self._data = self._data[mask]
 
+    def reproject(self):
+        latlon = np.meshgrid(self._lat, self._lon, indexing='ij')
+        # Create a x, y, z point cloud with 0 elevation. This elevation will be added to the real data. This lets us
+        # handle the fact that the edges of the cloud will be "below sea level" intelligently
+        xyz = np.stack(self.geodetic_to_ecef(*latlon, np.zeros(self.elevation.shape)))
+        original_shape = xyz.shape
+        xyz = xyz.reshape(3, -1).T  # Reshape to list of 3d points
+
+        # Rotate in longitude (about the z-axis) first, to align the center of the lat/lon region with longitude 0
+        # Then, rotate in latitude (about the y-axis), to align the center of the region with the north pole
+        middle_lat = np.median(self._lat)
+        middle_lon = np.median(self._lon)
+        R = Rotation.from_euler('zy', (360 - middle_lon, -(90 - middle_lat)), degrees=True)
+        xyz = R.apply(xyz)
+
+        xyz = xyz.T.reshape(original_shape)
+        xyz[2, :, :] -= WGS84_RADIUS
+        xyz[2, :, :] -= xyz[2, :, :].min() # Get offset to 0
+
+        self._data += xyz
+
+    # TODO: Use WGS84 spheroid instead of sphere
+    # TODO: This requires the rotation step also consider ellipsoidal coordinates
+    # https://en.wikipedia.org/wiki/Geographic_coordinate_conversion#From_geodetic_to_ECEF_coordinates
+    @staticmethod
+    def geodetic_to_ecef(lat, lon, h):
+        rlat, rlon = np.radians(lat), np.radians(lon)
+        x = (WGS84_RADIUS + h) * np.cos(rlat) * np.cos(rlon)
+        y = (WGS84_RADIUS + h) * np.cos(rlat) * np.sin(rlon)
+        z = (WGS84_RADIUS + h) * np.sin(rlat)
+        return x, y, z
+
     def zeroize_xy(self):
-        self._data[self.MERCATOR_X, :, :] -= self.mercator[0].min()
-        self._data[self.MERCATOR_Y, :, :] -= self.mercator[1].min()
+        self._data[self.METERS_X, :, :] -= self._data[self.METERS_X, :, :].min()
+        self._data[self.METERS_Y, :, :] -= self._data[self.METERS_Y, :, :].min()
 
     def scale(self, scale_factor):
         self._data *= scale_factor
 
     @property
     def elevation(self):
-        return self._data[self.ELEVATION, :, :]
-
-    @property
-    def mercator(self):
-        return self._data[self.MERCATOR_X:self.MERCATOR_Y+1, :, :]
+        return self._data[self.METERS_Z, :, :]
 
     @property
     def xyz(self):
-        return self._data[self.MERCATOR_X:self.ELEVATION+1, :, :]
-
-    @property
-    def latlon(self):
-        mx = self.mercator[0, :, 0]
-        my = self.mercator[1, 0, :]
-        return np.array(self.mercator_to_latlon(mx, my))
+        return self._data[self.METERS_X:self.METERS_Z + 1, :, :]
 
     # TODO: Make this take an arbitrary polygon and generate all tiles the polygon overlaps
     @classmethod
@@ -153,7 +186,7 @@ class TileMap:
                 height = self.rgb_to_meters(arr)
                 ii = np.s_[i * TILE_SIZE:i * TILE_SIZE + TILE_SIZE]
                 jj = np.s_[j * TILE_SIZE:j * TILE_SIZE + TILE_SIZE]
-                self._data[self.ELEVATION, ii, jj] = height
+                self._data[self.METERS_Z, ii, jj] = height
 
 
 if __name__ == '__main__':
@@ -162,10 +195,6 @@ if __name__ == '__main__':
     # se = (47.497631, -122.185169) # Seattle
     # nw = (47.739248, -122.448340) # Seattle
     z = 8
-
-    t = TileMap(se, nw, z)
-    print('min lat, lon', t.latlon[0].min(), t.latlon[1].min())
-    print('max lat, lon', t.latlon[0].max(), t.latlon[1].max())
 
     from mpl_toolkits.mplot3d import Axes3D
     import matplotlib.pyplot as plt
