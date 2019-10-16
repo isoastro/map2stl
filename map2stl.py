@@ -22,11 +22,12 @@ def write_triangle(fh ,xyz0, xyz1, xyz2):
 def get_header(args):
     lat1, lon1 = args.corner1
     lat2, lon2 = args.corner2
-    header = f'({lat1}, {lon1}) - ({lat2}, {lon2}) @ zoom={args.zoom}; raw data © Mapzen'
+    header = f'({lat1},{lon1})-({lat2}, {lon2}) @ zoom={args.zoom}; raw data ©Mapzen'
+    header = header.encode()
     header_len = len(header)
     if header_len > 80:
         raise ValueError(f'Tried to create {header_len} byte long header (max 80)')
-    return header.encode() + struct.pack(f'{80 - header_len}B', *[0 for _ in range(80 - header_len)])
+    return header + struct.pack(f'{80 - header_len}B', *[0 for _ in range(80 - header_len)])
 
 
 def filesize(num_triangles):

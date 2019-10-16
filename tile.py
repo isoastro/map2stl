@@ -41,7 +41,7 @@ class TileMap:
         self._lat, self._lon = self.mercator_to_latlon(mx, my)
 
         # Trim data
-        # self.trim(corner1, corner2)
+        self.trim(corner1, corner2)
 
         # Un-mercatorize
         self.reproject()
