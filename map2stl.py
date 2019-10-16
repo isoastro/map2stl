@@ -22,11 +22,17 @@ def write_triangle(fh ,xyz0, xyz1, xyz2):
 def get_header(args):
     lat1, lon1 = args.corner1
     lat2, lon2 = args.corner2
-    header = f'({lat1}, {lon1}) - ({lat2}, {lon2}) @ zoom={args.zoom}'
+    header = f'({lat1}, {lon1}) - ({lat2}, {lon2}) @ zoom={args.zoom}; raw data © Mapzen'
     header_len = len(header)
     if header_len > 80:
-        raise ValueError('Tried to create header larger than 80 bytes')
+        raise ValueError(f'Tried to create {header_len} byte long header (max 80)')
     return header.encode() + struct.pack(f'{80 - header_len}B', *[0 for _ in range(80 - header_len)])
+
+
+def filesize(num_triangles):
+    header = 80 + 4
+    per_tri = (4 * 3 * 4) + 2
+    return header + (num_triangles * per_tri)
 
 
 def xyz_to_stl(xyz, args):
@@ -34,7 +40,8 @@ def xyz_to_stl(xyz, args):
     _, nrows, ncols = xyz.shape
     # Two triangles per square
     num_triangles = 2 * (nrows - 1) * (ncols - 1)
-    print(f'Writing {num_triangles} triangles to {args.output}', flush=True)
+    MB = filesize(num_triangles) / 1024 / 1024
+    print(f'Writing {num_triangles} triangles to {args.output} ({MB:.2f} MiB)', flush=True)
 
     with open(args.output, 'wb') as f:
         # Dump 80 bytes of 0 as empty header
