@@ -2,6 +2,8 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 import imageio
 import api
+import matplotlib.pyplot as plt
+from pprint import pprint
 
 TILE_SIZE = 256
 WGS84_RADIUS = 6378137  # Meters
@@ -19,15 +21,15 @@ class TileMap:
     def __init__(self, corner1, corner2, zoom):
         self.zoom = zoom
         self._tiles = self.corners_to_tiles(corner1, corner2, zoom)
-        num_x_pixels = len(self._tiles) * TILE_SIZE
-        num_y_pixels = len(self._tiles[0]) * TILE_SIZE
-        self._data = np.zeros((self.DATA_DEPTH, num_x_pixels, num_y_pixels))
+        num_y_pixels = len(self._tiles) * TILE_SIZE
+        num_x_pixels = len(self._tiles[0]) * TILE_SIZE
+        self._data = np.zeros((self.DATA_DEPTH, num_y_pixels, num_x_pixels))
 
         # Get all the data
         self.download_tiles()
 
         # Recalculate pixel space
-        ox, oy, _ = self._tiles[0][0] # Origin
+        ox, oy, _ = self._tiles[0][0]  # Origin
         ox, oy = self.tile_coords_to_pixel(ox, oy)
         px = np.arange(ox, ox + num_x_pixels)
         py = np.arange(oy, oy + num_y_pixels)
@@ -38,8 +40,8 @@ class TileMap:
         # Convert to lat/lon bounds
         self._lat, self._lon = self.mercator_to_latlon(mx, my)
 
-        # Trim data and make x, y start at 0
-        self.trim(corner1, corner2)
+        # Trim data
+        # self.trim(corner1, corner2)
 
         # Un-mercatorize
         self.reproject()
@@ -81,12 +83,12 @@ class TileMap:
 
         xyz = xyz.T.reshape(original_shape)
         xyz[2, :, :] -= WGS84_RADIUS
-        xyz[2, :, :] -= xyz[2, :, :].min() # Get offset to 0
+        xyz[2, :, :] -= xyz[2, :, :].min()  # Get offset to 0
 
         self._data += xyz
 
     # TODO: Use WGS84 spheroid instead of sphere
-    # TODO: This requires the rotation step also consider ellipsoidal coordinates
+    # TODO: This requires the rotation/reproject step also consider ellipsoidal coordinates
     # https://en.wikipedia.org/wiki/Geographic_coordinate_conversion#From_geodetic_to_ECEF_coordinates
     @staticmethod
     def geodetic_to_ecef(lat, lon, h):
@@ -158,8 +160,8 @@ class TileMap:
     @classmethod
     def pixel_to_mercator(cls, px, py, zoom):
         r = cls.resolution(zoom)
-        mx = px * r - ORIGIN_METERS
-        my = py * r - ORIGIN_METERS
+        mx = (px * r) - ORIGIN_METERS
+        my = (py * r) - ORIGIN_METERS
         return mx, my
 
     @staticmethod
@@ -170,8 +172,8 @@ class TileMap:
 
     @staticmethod
     def tile_coords_to_pixel(tx, ty):
-        px = (tx) * TILE_SIZE
-        py = (ty) * TILE_SIZE
+        px = tx * TILE_SIZE
+        py = ty * TILE_SIZE
         return px, py
 
     @staticmethod
@@ -187,18 +189,3 @@ class TileMap:
                 ii = np.s_[i * TILE_SIZE:i * TILE_SIZE + TILE_SIZE]
                 jj = np.s_[j * TILE_SIZE:j * TILE_SIZE + TILE_SIZE]
                 self._data[self.METERS_Z, ii, jj] = height
-
-
-if __name__ == '__main__':
-    se = (46.925229, -121.829145) # Rainier
-    nw = (46.762427, -121.632913) # Rainier
-    # se = (47.497631, -122.185169) # Seattle
-    # nw = (47.739248, -122.448340) # Seattle
-    z = 8
-
-    from mpl_toolkits.mplot3d import Axes3D
-    import matplotlib.pyplot as plt
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(*t.mercator, t.elevation)
-    plt.show()
