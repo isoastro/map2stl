@@ -73,11 +73,6 @@ if __name__ == '__main__':
     # TODO: Add different options other than just specifying corners. Like center and radius, center and square lengths
     # TODO: Add argument for resolution, and pick zoom level from that. Decimate array if meters/pixel is between levels
 
-    # TODO: There's a bug when run with the following arguments:
-    # 42.989719 -122.184255 42.880737 -122.016995 12 crater_lake.stl
-    # The correct tiles are downloaded, but the STL file is missing part of the lake. Probably something wrong when
-    # trimming the data
-
     args = parser.parse_args()
 
     # Create map
