@@ -2,6 +2,7 @@ import numpy as np
 import struct
 import tile
 import argparse
+import os.path
 
 
 def progress_bar(iteration, total, length=50):
@@ -66,6 +67,10 @@ def xyz_to_stl(xyz, args):
 
     MB = filesize(num_triangles) / 1024 / 1024
     print(f'Writing {num_triangles} triangles to {args.output} ({MB:.2f} MiB)', flush=True)
+
+    directory = os.path.dirname(args.output)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
     num_triangles_written = 0
     with open(args.output, 'wb') as f:

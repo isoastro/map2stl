@@ -13,6 +13,9 @@ def tile_to_filename(x, y, zoom, output_dir='tiles'):
 def save_tile(x, y, zoom):
     url = tile_to_url(x, y, zoom)
     filename = tile_to_filename(x, y, zoom)
+    directory = os.path.dirname(filename)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
     if not os.path.exists(filename):
         urllib.request.urlretrieve(url, filename)
         print(f'Saved {url} to {filename}', flush=True)
