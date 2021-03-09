@@ -71,7 +71,7 @@ def xyz_to_stl(xyz, args):
     print(f'Writing {num_triangles} triangles to {args.output} ({MB:.2f} MiB)', flush=True)
 
     directory = os.path.dirname(args.output)
-    if not os.path.exists(directory):
+    if directory and not os.path.exists(directory):
         os.makedirs(directory)
 
     num_triangles_written = 0
